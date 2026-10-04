@@ -1,5 +1,5 @@
 -- Silo to Vault: moves everything from PULL_FROM to PUSH_TO,
--- except packages addressed to anything in SKIP_PACKAGES.
+-- except packages addressed to anything in SKIP_PACKAGES and items in SKIP_ITEMS.
 
 PULL_FROM = "create_connected:item_silo_18"
 PUSH_TO = "create:item_vault_5"
@@ -10,6 +10,10 @@ SKIP_PACKAGES = {
   "P1-Robo",
 }
 
+-- Item IDs to leave behind (shown with F3+H on the tooltip, e.g. "minecraft:diamond")
+SKIP_ITEMS = {
+}
+
 -- Seconds to wait when nothing moved (0 = as fast as possible)
 WAIT_TIME = 0
 
@@ -17,6 +21,11 @@ WAIT_TIME = 0
 local skip = {}
 for _, address in ipairs(SKIP_PACKAGES) do
   skip[string.lower(address)] = true
+end
+
+local skipItem = {}
+for _, id in ipairs(SKIP_ITEMS) do
+  skipItem[string.lower(id)] = true
 end
 
 local totalMoved = 0
@@ -40,6 +49,7 @@ local function getAddress(detail)
 end
 
 local function shouldSkip(slot, item)
+  if skipItem[item.name] then return true end
   if not string.find(item.name, "package", 1, true) then return false end
   local key = item.nbt
   if key and skipCache[key] ~= nil then return skipCache[key] end
@@ -93,7 +103,7 @@ local function draw()
   print("From:    " .. PULL_FROM)
   print("To:      " .. PUSH_TO)
   print("Moved:   " .. totalMoved .. " items")
-  print("Skipped: " .. totalSkipped .. " packages left behind")
+  print("Skipped: " .. totalSkipped .. " stacks left behind")
   print("")
   if problem then
     if term.isColour() then term.setTextColour(colours.red) end
