@@ -10,8 +10,8 @@ SKIP_PACKAGES = {
   "P1-Robo",
 }
 
--- Seconds between checks when nothing moved
-WAIT_TIME = 0.2
+-- Seconds to wait when nothing moved (0 = as fast as possible)
+WAIT_TIME = 0
 
 
 local skip = {}
@@ -22,6 +22,11 @@ end
 local totalMoved = 0
 local totalSkipped = 0
 local problem = nil
+
+-- Skip decisions keyed by the item's component hash, so each package
+-- is only inspected once instead of on every pass.
+local skipCache = {}
+local cacheSize = 0
 
 -- Create adds a "package" entry to item details for cardboard packages.
 local function getAddress(detail)
@@ -36,12 +41,23 @@ end
 
 local function shouldSkip(slot, item)
   if not string.find(item.name, "package", 1, true) then return false end
+  local key = item.nbt
+  if key and skipCache[key] ~= nil then return skipCache[key] end
+
   local ok, detail = pcall(peripheral.call, PULL_FROM, "getItemDetail", slot)
   if not ok or not detail then return false end
   local address = getAddress(detail)
-  if address and skip[string.lower(address)] then return true end
-  if detail.displayName and skip[string.lower(detail.displayName)] then return true end
-  return false
+  local result = (address ~= nil and skip[string.lower(address)] == true)
+    or (detail.displayName ~= nil and skip[string.lower(detail.displayName)] == true)
+
+  if key then
+    if cacheSize > 5000 then
+      skipCache, cacheSize = {}, 0
+    end
+    skipCache[key] = result
+    cacheSize = cacheSize + 1
+  end
+  return result
 end
 
 -- pushItems can't cross separate cable networks, even if the computer sees both.
@@ -90,15 +106,17 @@ local function draw()
   end
 end
 
--- Handle all slots in parallel so they land in the same tick.
+-- One pass: list the source, then push every slot in parallel so all
+-- pushes land in the same tick. Returns items moved and whether a call
+-- failed (meaning the setup should be re-checked).
 local function moveOnce()
   local ok, items = pcall(peripheral.call, PULL_FROM, "list")
   if not ok or not items then
-    problem = "Couldn't read " .. PULL_FROM
-    return 0
+    return 0, "Couldn't read " .. PULL_FROM
   end
 
   local moved, skipped = 0, 0
+  local full, failed = false, nil
   local tasks = {}
   for slot, item in pairs(items) do
     tasks[#tasks + 1] = function()
@@ -109,9 +127,9 @@ local function moveOnce()
       local ok2, n = pcall(peripheral.call, PULL_FROM, "pushItems", PUSH_TO, slot)
       if ok2 and n then
         moved = moved + n
-        if n < item.count then problem = PUSH_TO .. " is full" end
+        if n < item.count then full = true end
       elseif not ok2 then
-        problem = tostring(n)
+        failed = tostring(n)
       end
     end
   end
@@ -119,17 +137,36 @@ local function moveOnce()
 
   totalMoved = totalMoved + moved
   totalSkipped = skipped
-  return moved
+  if failed then return moved, failed end
+  problem = full and (PUSH_TO .. " is full") or nil
+  return moved, nil
 end
 
-while true do
-  problem = check()
-  if not problem then
-    local moved = moveOnce()
-    draw()
-    if moved == 0 then sleep(WAIT_TIME) end
-  else
-    draw()
-    sleep(2)
+local function worker()
+  while true do
+    problem = check()
+    if problem then
+      sleep(2)
+    else
+      while true do
+        local moved, err = moveOnce()
+        if err then
+          problem = err
+          sleep(1)
+          break
+        end
+        if moved == 0 and WAIT_TIME > 0 then sleep(WAIT_TIME) end
+      end
+    end
   end
 end
+
+-- Redraw on a timer rather than every pass.
+local function screen()
+  while true do
+    draw()
+    sleep(0.5)
+  end
+end
+
+parallel.waitForAny(worker, screen)
