@@ -20,3 +20,14 @@ Run `edit startup.lua` and change the SETTINGS box at the top:
 - `WAIT_TIME`: how long to wait between checks when there's nothing to move
 
 Right-click a wired modem to see the name of the block it's attached to. Both blocks must be on the same cable network.
+
+## config.lua
+
+Anything in `/config.lua` on the computer overrides the settings at the top of the program, and survives reinstalls and updates. One file can be shared by every computer; each program ignores settings it doesn't use. Example:
+
+```lua
+DISCORD_WEBHOOK = "https://discord.com/api/webhooks/..."
+DISCORD_MENTION = "<@&ROLE_ID>"
+ALLOWED = { "YourName", "Friend" }
+INPUT_CHEST = "minecraft:chest_3"
+```
